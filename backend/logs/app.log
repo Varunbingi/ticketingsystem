@@ -168,3 +168,13 @@
 2026-02-27 10:13:33,127 [INFO] httpx: HTTP Request: GET https://www.googleapis.com/oauth2/v2/userinfo "HTTP/1.1 200 OK"
 2026-02-27 10:23:16,833 [INFO] httpx: HTTP Request: POST https://oauth2.googleapis.com/token "HTTP/1.1 200 OK"
 2026-02-27 10:23:17,448 [INFO] httpx: HTTP Request: GET https://www.googleapis.com/oauth2/v2/userinfo "HTTP/1.1 200 OK"
+2026-02-27 14:07:52,005 [INFO] httpx: HTTP Request: POST https://oauth2.googleapis.com/token "HTTP/1.1 200 OK"
+2026-02-27 14:07:52,364 [INFO] httpx: HTTP Request: GET https://www.googleapis.com/oauth2/v2/userinfo "HTTP/1.1 200 OK"
+2026-02-27 14:10:37,089 [INFO] httpx: HTTP Request: POST https://oauth2.googleapis.com/token "HTTP/1.1 400 Bad Request"
+2026-02-27 14:11:07,723 [INFO] httpx: HTTP Request: POST https://oauth2.googleapis.com/token "HTTP/1.1 200 OK"
+2026-02-27 14:11:08,016 [INFO] httpx: HTTP Request: GET https://www.googleapis.com/oauth2/v2/userinfo "HTTP/1.1 200 OK"
+2026-02-27 14:11:21,170 [INFO] httpx: HTTP Request: POST https://oauth2.googleapis.com/token "HTTP/1.1 400 Bad Request"
+2026-02-27 14:11:48,745 [INFO] httpx: HTTP Request: POST https://oauth2.googleapis.com/token "HTTP/1.1 200 OK"
+2026-02-27 14:11:49,015 [INFO] httpx: HTTP Request: GET https://www.googleapis.com/oauth2/v2/userinfo "HTTP/1.1 200 OK"
+2026-03-02 11:09:02,707 [INFO] api.v1.ticket: Ticket is created successfully
+2026-03-02 11:16:46,931 [INFO] api.v1.ticket: Ticket is created successfully

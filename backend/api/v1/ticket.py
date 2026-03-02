@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException,Form, File, UploadFile
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
+from notifications.dispatcher import emit_event
 from db.schemas.ticket import ticketModel
 from db.models.ticket import Ticket
 from db.db import get_async_session
@@ -67,7 +68,14 @@ async def create_ticket(
         await db.commit()
         await db.refresh(ticket)
         logger.info("Ticket is created successfully")
-
+        await emit_event(
+        event_name="TICKET_CREATED",
+        strategy="DIRECT",
+        payload={
+            "user_id": authuser["id"],
+            "message": f"Your ticket regarding '{subject}' has been created."
+        }
+    )
         return ticket
          
     except Exception as exc:
@@ -124,6 +132,14 @@ async def update_ticket(
     try:
         await db.commit()
         await db.refresh(ticket)
+        await emit_event(
+        event_name="TICKET_UPDATED",
+        strategy="DIRECT",
+        payload={
+        "user_id": authuser["id"],
+        "message": f"Ticket #{ticket_id} ('{subject}') has been updated."
+        }
+    )
         return ticket
     except Exception as exc:
         await db.rollback()

@@ -24,3 +24,4 @@ class User(Base):
     updated_by_id = Column(Integer, unique=False, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     modified_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    is_verified = Column(Boolean, unique=False, default=False) 
