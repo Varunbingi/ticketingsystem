@@ -15,10 +15,14 @@ from repositories.auth import authenticate_user, create_user_token, get_current_
 import httpx
 from utils.settings import config
 from abc import ABC, abstractmethod
+<<<<<<< HEAD
 from sqlalchemy import select
 from notifications.channels.email_channel import EmailChannel
 from db.models.notifications import NotificationPreference
 from notifications.dispatcher import emit_event
+=======
+import random
+>>>>>>> b220a75 (small change in oauth 2.O)
 
 
 
@@ -99,20 +103,27 @@ class GoogleOAuthProvider(BaseOAuthProvider):
 
     async def get_or_create_user(self, user_info: dict) -> User:
         email = user_info.get("email")
-
         result = await self.db.execute(
             select(User).where(User.email == email)
         )
+        if result.scalar_one_or_none():
+            return "User with this email already exists"
         user = result.scalar_one_or_none()
+<<<<<<< HEAD
+=======
+        name = user_info.get("name").replace(" ","")
+        user_name = name+str(random.randint(100,999))
+
+>>>>>>> b220a75 (small change in oauth 2.O)
         if not user:
             user = User(
-                username=user_info.get("name"),
+                username=user_name,
                 email=email,
                 password=password_hash.hash("google_login"),
                 firstname=user_info.get("given_name"),
                 lastname=user_info.get("family_name") or "",
                 phone="",
-                department_id=1,
+                department_id=0,
                 designation="Google User",
                 reporting_to_id=0,
                 suspended=False,
@@ -187,7 +198,7 @@ class GithubOAuthProvider(BaseOAuthProvider):
                 firstname=user_info.get("name"),
                 lastname="",
                 phone="",
-                department_id=1,
+                department_id=0,
                 designation="GitHub User",
                 reporting_to_id=0,
                 suspended=False,
@@ -308,6 +319,7 @@ async def google_login():
         f"&redirect_uri={config.GOOGLE_REDIRECT_URI}"
         f"&scope=openid email profile"
         f"&access_type=offline"
+        f"&prompt=select_account"
     )
 
 
@@ -333,6 +345,7 @@ async def github_login():
         f"?client_id={config.GITHUB_CLIENT_ID}"
         f"&redirect_uri={config.GITHUB_REDIRECT_URI}"
         f"&scope=user:email"
+        f"&prompt=select_account"
     )
 
 
