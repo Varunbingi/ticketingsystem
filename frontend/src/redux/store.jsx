@@ -8,6 +8,7 @@ import permissionReducer from './slice/permissionSlice.jsx'
 import permissionCategoryReducer from './slice/permissionCategorySlice.jsx'
 import rolePermissionReducer from './slice/rolePermissionSlice.jsx'
 import ticketReducer from './slice/ticketSlice.jsx'
+import notificationReducer from "./slice/notificationSlice";
 
 
 
@@ -22,6 +23,7 @@ const store=configureStore({
         permissionCategory:permissionCategoryReducer,
         rolePermission:rolePermissionReducer,
         ticket:ticketReducer,
+        notifications: notificationReducer,
         
     }
 })

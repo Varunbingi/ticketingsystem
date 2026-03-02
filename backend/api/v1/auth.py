@@ -1,5 +1,8 @@
+import random
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
+from notifications.dispatcher import emit_event
 from db.db import get_async_session
 from db.models.user import User
 from db.schemas.user import CreateUserRequest, Token
@@ -10,9 +13,12 @@ from typing import Annotated
 from datetime import timedelta
 from repositories.auth import authenticate_user, create_user_token, get_current_user
 import httpx
-from sqlalchemy import select
 from utils.settings import config
 from abc import ABC, abstractmethod
+from sqlalchemy import select
+from notifications.channels.email_channel import EmailChannel
+from db.models.notifications import NotificationPreference
+from notifications.dispatcher import emit_event
 
 
 
@@ -98,7 +104,6 @@ class GoogleOAuthProvider(BaseOAuthProvider):
             select(User).where(User.email == email)
         )
         user = result.scalar_one_or_none()
-
         if not user:
             user = User(
                 username=user_info.get("name"),
@@ -211,16 +216,14 @@ async def current_user(
     return {"User": user}
 
 
-@auth_router.post("/create")
-async def create_user(
-    userrequest: CreateUserRequest,
-    db: AsyncSession = Depends(get_async_session)
-):
-    user = User(
-        username=userrequest.username,
-        password=password_hash.hash(userrequest.password),
-        firstname=userrequest.firstname,
-        lastname=userrequest.lastname,
+@auth_router.post('/create')
+async def create_user(userrequest: CreateUserRequest, 
+                      db: AsyncSession = Depends(get_async_session)):
+    create_user_model = User(
+        username =  userrequest.username,
+        password = password_hash.hash(userrequest.password),
+        firstname = userrequest.firstname,
+        lastname =userrequest.lastname,
         email=userrequest.email,
         phone=userrequest.phone,
         department_id=userrequest.department_id,
@@ -230,14 +233,52 @@ async def create_user(
         deleted=userrequest.deleted,
         is_client=userrequest.is_client,
         created_by_id=0,
-        updated_by_id=0
+        updated_by_id=0,
+        is_verified=False
     )
-
-    db.add(user)
+    db.add(create_user_model)
     await db.commit()
-    await db.refresh(user)
-    return user
+    await db.refresh(create_user_model)
+    verification_link = f"http://localhost:8000/auth/verify/{create_user_model.id}"
+    email = EmailChannel()
+    await email.send(
+        user_id=create_user_model.id,
+        message=f"Welcome {create_user_model.firstname}! Please verify here: {verification_link}",
+        title="VERIFICATION"
+    )
+    return create_user_model
 
+@auth_router.post("/verify/{user_id}")
+async def verify_user(user_id: int, db: AsyncSession = Depends(get_async_session)):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.is_verified:
+        return {"message": "User is already verified."}
+
+    user.is_verified = True
+    
+    prefs = NotificationPreference(
+        user_id=user_id,
+        email_enabled=True,
+        inapp_enabled=True
+    )
+    db.add(prefs)
+    await db.commit()
+    
+    await emit_event(
+        event_name="WELCOME",
+        strategy="DIRECT",
+        payload={
+            "user_id": user_id,
+            "message": f"Welcome {user.firstname}! Your account is ready."
+        }
+    )
+    
+    return {"message": f"User {user.username} has been verified."}
 
 @auth_router.post("/token", response_model=Token)
 async def login_for_accesstoken(

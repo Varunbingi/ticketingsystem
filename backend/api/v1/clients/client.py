@@ -7,6 +7,7 @@ from db.schemas.clients.client import ClientModel
 from datetime import datetime
 from typing import Annotated
 from repositories.auth import get_current_user
+from notifications.dispatcher import emit_event
 
 client_router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -42,7 +43,14 @@ async def add_client(client: ClientModel, authuser: Annotated[dict, Depends(get_
     try:
         await db.commit()
         await db.refresh(dataobj)
-
+        await emit_event(
+            event_name="WELCOME", # Or "CLIENT_REGISTERED"
+            strategy="DIRECT",
+            payload={
+                "user_id": authuser["id"], # Or the client's internal user ID if mapped
+                "message": f"Client '{dataobj.name}' has been successfully registered."
+        }
+        )
         return dataobj
     except Exception as exc:
         await db.rollback()

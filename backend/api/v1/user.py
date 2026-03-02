@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from db.schemas import user
+from notifications.dispatcher import emit_event
 from db.models.user import User
 from db.db import get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,8 +12,8 @@ from sqlalchemy import func, or_, asc, desc
 from sqlalchemy.orm import aliased
 from repositories.auth import get_current_user
 import logging
-from utils.email import send_email
 from datetime import date
+from db.models.notifications import NotificationPreference
 
 logger = logging.getLogger(__name__)
 
@@ -143,17 +145,25 @@ async def create_user(userrequest: CreateUserRequest,
         "email": userrequest.email,
         "registration_date": date.today().strftime("%B %d, %Y")
     }
-    background_tasks.add_task(
-        send_email,
-        subject="Welcome Aboard!",
-        recipient_email=[userrequest.email],
-        template_name="user_registration.html",
-        context=email_context
+    prefs = NotificationPreference(
+        user_id=create_user_model.id,
+        email_enabled=True,
+        inapp_enabled=True
     )
+    db.add(prefs)
+    await emit_event(
+        event_name="WELCOME",
+        strategy="DIRECT",
+        payload={
+            "user_id": create_user_model.id,
+            "message": f"Welcome {create_user_model.firstname}! Your account is ready."
+        }
+    )
+    await db.commit()
 
     return {
         'error': False,
-        'message': '',
+        'message': 'user_created',
         'data': create_user_model
     }
 
@@ -200,7 +210,7 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_async_session
 @user_router.patch('/{user_id}/update-password')
 async def update_password(user_id:int, userrequest: UpdatePasswordRequest, authuser: Annotated[dict, Depends(get_current_user)], db:AsyncSession = Depends(get_async_session)):
     user = await db.get(User, user_id);
-    if not user:
+    if not user or user.deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
 
     user.password = password_hash.hash(userrequest.password)
@@ -208,6 +218,15 @@ async def update_password(user_id:int, userrequest: UpdatePasswordRequest, authu
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    # After await db.refresh(user)
+    await emit_event(
+    event_name="SECURITY_ALERT",
+    strategy="DIRECT",
+    payload={
+        "user_id": user.id,
+        "message": "Your account password was recently changed. If this wasn't you, contact support."
+        }
+    )
     return {
         'error': False,
         'message': f"User '{user.username}' password updated",

@@ -16,6 +16,7 @@ import RequireAuth from './components/RequireAuth.jsx'
 import Tickets from './pages/Tickets.jsx'
 import TicketDetails from './components/TicketDetails.jsx'
 import OAuthCallback from './pages/OAuthCallback.jsx' 
+import Notifications from './pages/Notifications.jsx'
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
             <Route path='/permissions' element={<Permissions />} />
             <Route path='/tickets' element={<Tickets />} />
             <Route path='/tickets/:id' element={<TicketDetails />} />
+            <Route path="/notifications" element={<Notifications />} />
           </Route>
         </Route>
 
