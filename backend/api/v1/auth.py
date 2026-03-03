@@ -1,6 +1,6 @@
 import random
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from notifications.dispatcher import emit_event
 from db.db import get_async_session
@@ -15,20 +15,16 @@ from repositories.auth import authenticate_user, create_user_token, get_current_
 import httpx
 from utils.settings import config
 from abc import ABC, abstractmethod
-<<<<<<< HEAD
 from sqlalchemy import select
 from notifications.channels.email_channel import EmailChannel
 from db.models.notifications import NotificationPreference
 from notifications.dispatcher import emit_event
-=======
-import random
->>>>>>> b220a75 (small change in oauth 2.O)
 
 
 
 
 password_hash = PasswordHash.recommended()
-
+background_tasks = BackgroundTasks()
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -106,15 +102,11 @@ class GoogleOAuthProvider(BaseOAuthProvider):
         result = await self.db.execute(
             select(User).where(User.email == email)
         )
-        if result.scalar_one_or_none():
-            return "User with this email already exists"
+
         user = result.scalar_one_or_none()
-<<<<<<< HEAD
-=======
         name = user_info.get("name").replace(" ","")
         user_name = name+str(random.randint(100,999))
 
->>>>>>> b220a75 (small change in oauth 2.O)
         if not user:
             user = User(
                 username=user_name,
@@ -252,7 +244,8 @@ async def create_user(userrequest: CreateUserRequest,
     await db.refresh(create_user_model)
     verification_link = f"http://localhost:8000/auth/verify/{create_user_model.id}"
     email = EmailChannel()
-    await email.send(
+    background_tasks.add_task(
+        email.send,
         user_id=create_user_model.id,
         message=f"Welcome {create_user_model.firstname}! Please verify here: {verification_link}",
         title="VERIFICATION"
@@ -280,7 +273,8 @@ async def verify_user(user_id: int, db: AsyncSession = Depends(get_async_session
     db.add(prefs)
     await db.commit()
     
-    await emit_event(
+    background_tasks.add_task(
+        emit_event,
         event_name="WELCOME",
         strategy="DIRECT",
         payload={
@@ -330,6 +324,8 @@ async def google_callback(code: str, db: AsyncSession = Depends(get_async_sessio
     user = await provider.authenticate(code)
 
     jwt_token = create_user_token(user.username, user.id, timedelta(minutes=15))
+    user.is_verified = True
+    await db.commit()
 
     return RedirectResponse(
                 url=f"{config.FRONTEND_URL}/auth/google/callback?token={jwt_token}"
@@ -354,6 +350,8 @@ async def github_callback(code: str, db: AsyncSession = Depends(get_async_sessio
 
     provider = GithubOAuthProvider(db)
     user = await provider.authenticate(code)
+    user.is_verified = True
+    await db.commit()
 
     jwt_token = create_user_token(user.username, user.id, timedelta(minutes=15))
     return RedirectResponse(

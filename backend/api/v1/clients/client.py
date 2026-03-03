@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException , BackgroundTasks
 from db.db import get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.models.clients.client import Client
@@ -10,7 +10,7 @@ from repositories.auth import get_current_user
 from notifications.dispatcher import emit_event
 
 client_router = APIRouter(prefix="/clients", tags=["clients"])
-
+background_tasks = BackgroundTasks()
 @client_router.get("/")
 async def get_all_clients(db: AsyncSession = Depends(get_async_session)):
     results = await db.execute(select(Client).order_by(desc(Client.id)))
@@ -43,7 +43,8 @@ async def add_client(client: ClientModel, authuser: Annotated[dict, Depends(get_
     try:
         await db.commit()
         await db.refresh(dataobj)
-        await emit_event(
+        background_tasks.add_task(
+            emit_event,
             event_name="WELCOME", # Or "CLIENT_REGISTERED"
             strategy="DIRECT",
             payload={
