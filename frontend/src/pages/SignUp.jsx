@@ -111,12 +111,12 @@ const SignUp = () => {
                 className="border-b border-blue-300 px-2 py-1 rounded-md focus:border-slate-100 focus:outline" />
             </div>
             <div className="flex flex-col">
-              <input type="number" name="department_id" id="department_id" value={form.department_id} onChange={handleChange}
+              <input type="number" name="department_id" min={0} id="department_id" value={form.department_id} onChange={handleChange}
                 placeholder="Enter your department id"
                 className="border-b border-blue-300 px-2 py-1 rounded-md focus:border-slate-100 focus:outline" />
             </div>
             <div className="flex flex-col">
-              <input type="number" name="reporting_to" id="reporting_to" value={form.reporting_to} onChange={handleChange}
+              <input type="number" name="reporting_to" id="reporting_to" min={0} value={form.reporting_to} onChange={handleChange}
                 placeholder="Reporting to (user id)"
                 className="border-b border-blue-300 px-2 py-1 rounded-md focus:border-slate-100 focus:outline" />
             </div>
