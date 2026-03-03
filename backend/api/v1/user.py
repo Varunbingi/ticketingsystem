@@ -151,7 +151,8 @@ async def create_user(userrequest: CreateUserRequest,
         inapp_enabled=True
     )
     db.add(prefs)
-    await emit_event(
+    background_tasks.add_task(
+        emit_event,
         event_name="WELCOME",
         strategy="DIRECT",
         payload={
@@ -208,7 +209,7 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_async_session
     }
 
 @user_router.patch('/{user_id}/update-password')
-async def update_password(user_id:int, userrequest: UpdatePasswordRequest, authuser: Annotated[dict, Depends(get_current_user)], db:AsyncSession = Depends(get_async_session)):
+async def update_password(user_id:int, userrequest: UpdatePasswordRequest, background_tasks: BackgroundTasks,authuser: Annotated[dict, Depends(get_current_user)], db:AsyncSession = Depends(get_async_session)):
     user = await db.get(User, user_id);
     if not user or user.deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
@@ -219,12 +220,13 @@ async def update_password(user_id:int, userrequest: UpdatePasswordRequest, authu
     await db.commit()
     await db.refresh(user)
     # After await db.refresh(user)
-    await emit_event(
-    event_name="SECURITY_ALERT",
-    strategy="DIRECT",
-    payload={
-        "user_id": user.id,
-        "message": "Your account password was recently changed. If this wasn't you, contact support."
+    background_tasks.add_task(
+        emit_event,
+        event_name="SECURITY_ALERT",
+        strategy="DIRECT",
+        payload={
+            "user_id": user.id,
+            "message": "Your account password was recently changed. If this wasn't you, contact support."
         }
     )
     return {

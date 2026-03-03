@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException,Form, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException,Form, File, UploadFile , BackgroundTasks
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from notifications.dispatcher import emit_event
@@ -30,6 +30,7 @@ async def list_of_tickets(db: AsyncSession = Depends(get_async_session)):
 
 @ticket_router.post("/")
 async def create_ticket(
+    background_tasks: BackgroundTasks,
     authuser: Annotated[dict, Depends(get_current_user)],
     db: AsyncSession = Depends(get_async_session),
 
@@ -68,14 +69,16 @@ async def create_ticket(
         await db.commit()
         await db.refresh(ticket)
         logger.info("Ticket is created successfully")
-        await emit_event(
-        event_name="TICKET_CREATED",
-        strategy="DIRECT",
-        payload={
-            "user_id": authuser["id"],
-            "message": f"Your ticket regarding '{subject}' has been created."
+
+        background_tasks.add_task(
+        emit_event,                    
+        event_name="TICKET_CREATED",     
+        strategy="DIRECT",               
+        payload={                        
+        "user_id": authuser["id"],
+        "message": f"Your ticket regarding '{subject}' has been created."
         }
-    )
+        )
         return ticket
          
     except Exception as exc:

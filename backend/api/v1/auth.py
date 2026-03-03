@@ -1,6 +1,6 @@
 import random
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from notifications.dispatcher import emit_event
 from db.db import get_async_session
@@ -24,7 +24,7 @@ from notifications.dispatcher import emit_event
 
 
 password_hash = PasswordHash.recommended()
-
+background_tasks = BackgroundTasks()
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -99,20 +99,23 @@ class GoogleOAuthProvider(BaseOAuthProvider):
 
     async def get_or_create_user(self, user_info: dict) -> User:
         email = user_info.get("email")
-
         result = await self.db.execute(
             select(User).where(User.email == email)
         )
+
         user = result.scalar_one_or_none()
+        name = user_info.get("name").replace(" ","")
+        user_name = name+str(random.randint(100,999))
+
         if not user:
             user = User(
-                username=user_info.get("name"),
+                username=user_name,
                 email=email,
                 password=password_hash.hash("google_login"),
                 firstname=user_info.get("given_name"),
                 lastname=user_info.get("family_name") or "",
                 phone="",
-                department_id=1,
+                department_id=0,
                 designation="Google User",
                 reporting_to_id=0,
                 suspended=False,
@@ -187,7 +190,7 @@ class GithubOAuthProvider(BaseOAuthProvider):
                 firstname=user_info.get("name"),
                 lastname="",
                 phone="",
-                department_id=1,
+                department_id=0,
                 designation="GitHub User",
                 reporting_to_id=0,
                 suspended=False,
@@ -241,7 +244,8 @@ async def create_user(userrequest: CreateUserRequest,
     await db.refresh(create_user_model)
     verification_link = f"http://localhost:8000/auth/verify/{create_user_model.id}"
     email = EmailChannel()
-    await email.send(
+    background_tasks.add_task(
+        email.send,
         user_id=create_user_model.id,
         message=f"Welcome {create_user_model.firstname}! Please verify here: {verification_link}",
         title="VERIFICATION"
@@ -269,7 +273,8 @@ async def verify_user(user_id: int, db: AsyncSession = Depends(get_async_session
     db.add(prefs)
     await db.commit()
     
-    await emit_event(
+    background_tasks.add_task(
+        emit_event,
         event_name="WELCOME",
         strategy="DIRECT",
         payload={
@@ -308,6 +313,7 @@ async def google_login():
         f"&redirect_uri={config.GOOGLE_REDIRECT_URI}"
         f"&scope=openid email profile"
         f"&access_type=offline"
+        f"&prompt=select_account"
     )
 
 
@@ -318,6 +324,8 @@ async def google_callback(code: str, db: AsyncSession = Depends(get_async_sessio
     user = await provider.authenticate(code)
 
     jwt_token = create_user_token(user.username, user.id, timedelta(minutes=15))
+    user.is_verified = True
+    await db.commit()
 
     return RedirectResponse(
                 url=f"{config.FRONTEND_URL}/auth/google/callback?token={jwt_token}"
@@ -333,6 +341,7 @@ async def github_login():
         f"?client_id={config.GITHUB_CLIENT_ID}"
         f"&redirect_uri={config.GITHUB_REDIRECT_URI}"
         f"&scope=user:email"
+        f"&prompt=select_account"
     )
 
 
@@ -341,6 +350,8 @@ async def github_callback(code: str, db: AsyncSession = Depends(get_async_sessio
 
     provider = GithubOAuthProvider(db)
     user = await provider.authenticate(code)
+    user.is_verified = True
+    await db.commit()
 
     jwt_token = create_user_token(user.username, user.id, timedelta(minutes=15))
     return RedirectResponse(
