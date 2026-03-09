@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException,Request
+
+from fastapi import APIRouter, Depends, HTTPException , BackgroundTasks,Request
+
 from db.db import get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.models.clients.client import Client
@@ -11,7 +13,7 @@ from notifications.dispatcher import emit_event
 from logging_system.log_helper import new_span, end_span, log_info, log_exception,log_warning
 
 client_router = APIRouter(prefix="/clients", tags=["clients"])
-
+background_tasks = BackgroundTasks()
 @client_router.get("/")
 async def get_all_clients(request:Request,db: AsyncSession = Depends(get_async_session)):
     new_span(request, "get_all_clients_route")
@@ -55,22 +57,31 @@ async def get_client(request: Request, id: int, db: AsyncSession = Depends(get_a
         end_span(request)
     
 @client_router.post("/")
-async def add_client(request: Request, client: ClientModel, authuser: Annotated[dict, Depends(get_current_user)], db: AsyncSession = Depends(get_async_session)):
+async def add_client(
+    request: Request,
+    client: ClientModel,
+    authuser: Annotated[dict, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_async_session)
+):
     new_span(request, "add_client_route")
     try:
         new_span(request, "prepare_client_data")
+
         data = client.model_dump()
         now = datetime.now().replace(microsecond=0)
+
         data["created_at"] = data.get("created_at") or now
         data["modified_at"] = now
-        data['created_by_id'] = authuser['id']
-        data['modified_by_id'] = authuser['id']
-        end_span(request)  # prepare_client_data
+        data["created_by_id"] = authuser["id"]
+        data["modified_by_id"] = authuser["id"]
+
+        end_span(request)
 
         dataobj = Client(**data)
         db.add(dataobj)
 
         new_span(request, "db_commit")
+
         try:
             await db.commit()
             await db.refresh(dataobj)
@@ -83,33 +94,46 @@ async def add_client(request: Request, client: ClientModel, authuser: Annotated[
                     "message": f"Client '{dataobj.name}' has been successfully registered."
                 }
             )
+
             log_info(request, f"Client '{dataobj.name}' added successfully")
             return dataobj
+
         except Exception as exc:
             await db.rollback()
             log_exception(request, f"DB commit failed: {str(exc)}")
             raise HTTPException(status_code=400, detail=str(exc))
+
         finally:
-            end_span(request)  # db_commit
+            end_span(request)
 
     except Exception as exc:
         log_exception(request, f"Add client route failed: {str(exc)}")
         raise
+
     finally:
         end_span(request)
         
 @client_router.put("/{client_id}")
-async def update_client(request: Request, client_id: int, client: ClientModel, authuser: Annotated[dict, Depends(get_current_user)], db: AsyncSession = Depends(get_async_session)):
+async def update_client(
+    request: Request,
+    client_id: int,
+    client: ClientModel,
+    authuser: Annotated[dict, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_async_session)
+):
     new_span(request, "update_client_route")
+
     try:
         now = datetime.now().replace(microsecond=0)
+
         new_span(request, "fetch_client_db")
         result = await db.execute(select(Client).where(Client.id == client_id))
         record = result.scalars().one_or_none()
-        end_span(request)  # fetch_client_db
+        end_span(request)
 
         if record:
             new_span(request, "update_client_data")
+
             record.name = client.name
             record.email = client.email
             record.phone = client.phone
@@ -117,28 +141,34 @@ async def update_client(request: Request, client_id: int, client: ClientModel, a
             record.startdate = client.startdate
             record.enddate = client.enddate
             record.modified_at = now
-            record.modified_by_id = authuser['id']
-            end_span(request)  # update_client_data
+            record.modified_by_id = authuser["id"]
+
+            end_span(request)
 
             new_span(request, "db_commit")
             try:
                 await db.commit()
                 await db.refresh(record)
+
                 log_info(request, f"Client {client_id} updated successfully")
                 return record
+
             except Exception as exc:
                 await db.rollback()
                 log_exception(request, f"DB commit failed: {str(exc)}")
                 raise HTTPException(status_code=400, detail=str(exc))
-    
+
             finally:
-                end_span(request)  # db_commit
+                end_span(request)
+
         else:
             log_warning(request, f"Client {client_id} not found")
-            return "Client not Found"
+            raise HTTPException(status_code=404, detail="Client not found")
+
     except Exception as exc:
         log_exception(request, f"Update client route failed: {str(exc)}")
         raise
+
     finally:
         end_span(request)  # update_client_route
     

@@ -144,21 +144,23 @@ async def get_user(
         end_span(request)  # end top-level get_user span
 
 @user_router.post('/create')
-async def create_user(request: Request,
-                      userrequest: CreateUserRequest, 
-                      background_tasks: BackgroundTasks,
-                      authuser: Annotated[dict, Depends(get_current_user)],
-                       db: AsyncSession = Depends(get_async_session )):
+async def create_user(
+    request: Request,
+    userrequest: CreateUserRequest,
+    background_tasks: BackgroundTasks,
+    authuser: Annotated[dict, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_async_session)
+):
 
-    # Set actor info for logging
+    # set actor info for logging
     request.state.user_id = authuser["id"]
 
-    new_span(request, "create_user")  # Top-level span
-    
+    new_span(request, "create_user")
 
     try:
-        # Nested span: Insert user in DB
+        # insert user
         new_span(request, "insert_user_db")
+
         create_user_model = User(
             username=userrequest.username,
             firstname=userrequest.firstname,
@@ -175,24 +177,21 @@ async def create_user(request: Request,
             updated_by_id=authuser["id"],
             password=password_hash.hash(userrequest.password)
         )
+
         db.add(create_user_model)
         await db.commit()
         await db.refresh(create_user_model)
+
         end_span(request)  # end insert_user_db
 
-
-   
-        # Nested span: Send notifications
-        new_span(request, "send_notifications")
-
-        # Prepare email context
+        # prepare email context
         email_context = {
             "name": create_user_model.firstname,
             "email": create_user_model.email,
             "registration_date": date.today().strftime("%B %d, %Y")
         }
 
-        # Store notification preferences
+        # store notification preferences
         prefs = NotificationPreference(
             user_id=create_user_model.id,
             email_enabled=True,
@@ -200,24 +199,32 @@ async def create_user(request: Request,
         )
         db.add(prefs)
 
-        # Emit welcome event
-        await emit_event(
+        # send welcome event in background
+        new_span(request, "send_notifications")
+
+        background_tasks.add_task(
+            emit_event,
             event_name="WELCOME",
             strategy="DIRECT",
             payload={
                 "user_id": create_user_model.id,
                 "message": f"Welcome {email_context['name']}! Your account is ready.",
-                "email_context": email_context  # include the context for email templates
+                "email_context": email_context
             }
         )
+
         await db.commit()
-        end_span(request)  # end send_notifications
+
+        end_span(request)
+
         log_info(request, f"User '{create_user_model.username}' created successfully")
+
         return {
-            'error': False,
-            'message': 'user_created',
-            'data': create_user_model
+            "error": False,
+            "message": "user_created",
+            "data": create_user_model
         }
+
     except Exception as e:
         log_exception(request, f"Error creating user: {str(e)}")
         raise
@@ -314,35 +321,52 @@ async def delete_user(request: Request,user_id: int,authuser: dict = Depends(get
 
 
 @user_router.patch('/{user_id}/update-password')
-async def update_password(request: Request,user_id:int, userrequest: UpdatePasswordRequest, authuser: Annotated[dict, Depends(get_current_user)], db:AsyncSession = Depends(get_async_session)):
-    
-    # Set actor info for logging
+async def update_password(
+    request: Request,
+    user_id: int,
+    userrequest: UpdatePasswordRequest,
+    background_tasks: BackgroundTasks,
+    authuser: Annotated[dict, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_async_session)
+):
+
+    # set actor info for logging
     request.state.user_id = authuser["id"]
 
-    
-    new_span(request, "update_password")  # Top-level span
+    new_span(request, "update_password")
+
     try:
-        # Nested span: Fetch user from DB
+        # fetch user
         new_span(request, "fetch_user_db")
+
         user = await db.get(User, user_id)
-        end_span(request)  # end fetch_user_db
+
+        end_span(request)
 
         if not user or user.deleted:
             log_warning(request, f"User {user_id} not found or deleted")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="user not found"
+            )
 
-        # Nested span: Update password
+        # update password
         new_span(request, "update_password_db")
+
         user.password = password_hash.hash(userrequest.password)
         user.updated_by_id = authuser["id"]
+
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        end_span(request)  # end update_password_db
 
-        # Nested span: Emit security alert
+        end_span(request)
+
+        # emit security alert in background
         new_span(request, "emit_security_alert")
-        await emit_event(
+
+        background_tasks.add_task(
+            emit_event,
             event_name="SECURITY_ALERT",
             strategy="DIRECT",
             payload={
@@ -350,15 +374,20 @@ async def update_password(request: Request,user_id:int, userrequest: UpdatePassw
                 "message": "Your account password was recently changed. If this wasn't you, contact support."
             }
         )
-        end_span(request)  # end emit_security_alert
+
+        end_span(request)
 
         log_info(request, f"User '{user.username}' password updated successfully")
-        return {"error": False, "message": f"User '{user.username}' password updated", "data": user}
+
+        return {
+            "error": False,
+            "message": f"User '{user.username}' password updated",
+            "data": user
+        }
 
     except Exception as e:
         log_exception(request, f"Error updating password for user {user_id}: {str(e)}")
         raise
 
     finally:
-        end_span(request)  # end top-level update_password span
-
+        end_span(request)

@@ -1,3 +1,5 @@
+from datetime import date
+
 from .base_channel import BaseChannel
 from ..providers.email import send_email 
 from db.db import async_session
@@ -22,7 +24,8 @@ class EmailChannel(BaseChannel):
             if user and user.email:
                 email_context = {
                     "message": message, 
-                    "firstname": user.firstname
+                    "firstname": user.firstname,
+                    "registration_date": date.today().strftime("%B %d, %Y")
                 }
                 if title == "VERIFICATION":
                     email_context["verification_link"] = message

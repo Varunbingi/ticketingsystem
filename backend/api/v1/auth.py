@@ -1,6 +1,5 @@
 import random
-
-from fastapi import APIRouter, Depends, HTTPException, status,Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status,Request
 from fastapi.responses import RedirectResponse
 from notifications.dispatcher import emit_event
 from db.db import get_async_session
@@ -25,7 +24,7 @@ from logging_system.log_helper import new_span, end_span, log_info, log_warning,
 
 
 password_hash = PasswordHash.recommended()
-
+background_tasks = BackgroundTasks()
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -137,12 +136,18 @@ class GoogleOAuthProvider(BaseOAuthProvider):
         new_span("google_get_or_create_user")
         try:
             email = user_info.get("email")
-            result = await self.db.execute(select(User).where(User.email == email))
+
+            result = await self.db.execute(
+                select(User).where(User.email == email)
+            )
             user = result.scalar_one_or_none()
+
+            name = user_info.get("name").replace(" ", "")
+            user_name = name + str(random.randint(100, 999))
 
             if not user:
                 user = User(
-                    username=user_info.get("name"),
+                    username=user_name,
                     email=email,
                     password=password_hash.hash("google_login"),
                     firstname=user_info.get("given_name"),
@@ -157,14 +162,17 @@ class GoogleOAuthProvider(BaseOAuthProvider):
                     created_by_id=0,
                     updated_by_id=0
                 )
+
                 self.db.add(user)
                 await self.db.commit()
                 await self.db.refresh(user)
+
                 log_info(None, f"Google user created: {email}")
             else:
                 log_info(None, f"Google user exists: {email}")
 
             return user
+
         except Exception as e:
             log_exception(None, f"Google get_or_create_user failed: {str(e)}")
             raise
@@ -226,7 +234,10 @@ class GithubOAuthProvider(BaseOAuthProvider):
         new_span("github_get_or_create_user")
         try:
             email = user_info.get("email")
-            result = await self.db.execute(select(User).where(User.email == email))
+
+            result = await self.db.execute(
+                select(User).where(User.email == email)
+            )
             user = result.scalar_one_or_none()
 
             if not user:
@@ -246,14 +257,17 @@ class GithubOAuthProvider(BaseOAuthProvider):
                     created_by_id=0,
                     updated_by_id=0
                 )
+
                 self.db.add(user)
                 await self.db.commit()
                 await self.db.refresh(user)
+
                 log_info(None, f"GitHub user created: {email}")
             else:
                 log_info(None, f"GitHub user exists: {email}")
 
             return user
+
         except Exception as e:
             log_exception(None, f"GitHub get_or_create_user failed: {str(e)}")
             raise
@@ -278,9 +292,12 @@ async def current_user_route(
         end_span(request)
 
 @auth_router.post("/create")
-async def create_user_route(request:Request,userrequest: CreateUserRequest, 
-                            db: AsyncSession = Depends(get_async_session)):
-    new_span(request,"create_user_route")
+async def create_user_route(
+    request: Request,
+    userrequest: CreateUserRequest,
+    db: AsyncSession = Depends(get_async_session)
+):
+    new_span(request, "create_user_route")
     try:
         create_user_model = User(
             username=userrequest.username,
@@ -299,63 +316,98 @@ async def create_user_route(request:Request,userrequest: CreateUserRequest,
             updated_by_id=0,
             is_verified=False
         )
+
         db.add(create_user_model)
         await db.commit()
         await db.refresh(create_user_model)
 
-        new_span(request,"send_verification_email")
+        # send verification email in background
+        new_span(request, "send_verification_email")
         try:
             verification_link = f"http://localhost:8000/auth/verify/{create_user_model.id}"
+
             email = EmailChannel()
-            await email.send(
+
+            background_tasks.add_task(
+                email.send,
                 user_id=create_user_model.id,
                 message=f"Welcome {create_user_model.firstname}! Please verify here: {verification_link}",
                 title="VERIFICATION"
             )
+
             log_info(request, f"Verification email sent to {create_user_model.email}")
+
         finally:
             end_span(request)
 
         return create_user_model
+
+    except Exception as e:
+        log_exception(request, f"User creation failed: {str(e)}")
+        raise
+
     finally:
         end_span(request)
 
 @auth_router.post("/verify/{user_id}")
-async def verify_user_route(request:Request,user_id: int, db: AsyncSession = Depends(get_async_session)):
-    new_span(request,"verify_user_route")
+async def verify_user_route(
+    request: Request,
+    user_id: int,
+    db: AsyncSession = Depends(get_async_session)
+):
+    new_span(request, "verify_user_route")
     try:
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
-        
+
         if not user:
             log_warning(request, f"User not found for verification: {user_id}")
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         if user.is_verified:
-            log_info(request,f"User already verified: {user.email}")
+            log_info(request, f"User already verified: {user.email}")
             return {"message": "User is already verified."}
 
+        # mark user as verified
         user.is_verified = True
-        prefs = NotificationPreference(user_id=user_id, email_enabled=True, inapp_enabled=True)
+
+        # create notification preferences
+        prefs = NotificationPreference(
+            user_id=user_id,
+            email_enabled=True,
+            inapp_enabled=True
+        )
         db.add(prefs)
+
         await db.commit()
 
-        new_span(request,"emit_welcome_event")
+        # emit welcome event
+        new_span(request, "emit_welcome_event")
         try:
             await emit_event(
                 event_name="WELCOME",
                 strategy="DIRECT",
-                payload={"user_id": user_id, "message": f"Welcome {user.firstname}! Your account is ready."}
+                payload={
+                    "user_id": user_id,
+                    "message": f"Welcome {user.firstname}! Your account is ready."
+                }
             )
+
             log_info(request, f"WELCOME event emitted for {user.email}")
+
         finally:
             end_span(request)
 
         return {"message": f"User {user.username} has been verified."}
+
+    except Exception as e:
+        log_exception(request, f"Verification failed: {str(e)}")
+        raise
+
     finally:
         end_span(request)
 
-
+        
 @auth_router.post("/token", response_model=Token)
 async def login_for_accesstoken_route(request:Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -386,22 +438,43 @@ async def google_login_route():
         f"&redirect_uri={config.GOOGLE_REDIRECT_URI}"
         f"&scope=openid email profile"
         f"&access_type=offline"
+        f"&prompt=select_account"
     )
 
 
 
 @auth_router.get("/google/callback")
-async def google_callback_route(request:Request,code: str, db: AsyncSession = Depends(get_async_session)):
-    new_span(Request,"google_callback_route")
+async def google_callback_route(
+    request: Request,
+    code: str,
+    db: AsyncSession = Depends(get_async_session)
+):
+    new_span(request, "google_callback_route")
     try:
         provider = GoogleOAuthProvider(db)
+
+        # authenticate user with google
         user = await provider.authenticate(code)
+
+        # mark user verified
+        user.is_verified = True
+        await db.commit()
+
+        # create jwt token
         jwt_token = create_user_token(user.username, user.id, timedelta(minutes=15))
-        log_info(Request, f"Google OAuth login success: {user.email}")
-        return RedirectResponse(url=f"{config.FRONTEND_URL}/auth/google/callback?token={jwt_token}")
+
+        log_info(request, f"Google OAuth login success: {user.email}")
+
+        return RedirectResponse(
+            url=f"{config.FRONTEND_URL}/auth/google/callback?token={jwt_token}"
+        )
+
+    except Exception as e:
+        log_exception(request, f"Google OAuth callback failed: {str(e)}")
+        raise
+
     finally:
         end_span(request)
-# GITHUB ROUTES
 
 
 @auth_router.get("/github/login")
@@ -411,16 +484,38 @@ async def github_login_route():
         f"?client_id={config.GITHUB_CLIENT_ID}"
         f"&redirect_uri={config.GITHUB_REDIRECT_URI}"
         f"&scope=user:email"
+        f"&prompt=select_account"
     )
     
 @auth_router.get("/github/callback")
-async def github_callback_route(request:Request,code: str, db: AsyncSession = Depends(get_async_session)):
-    new_span("github_callback_route")
+async def github_callback_route(
+    request: Request,
+    code: str,
+    db: AsyncSession = Depends(get_async_session)
+):
+    new_span(request, "github_callback_route")
     try:
         provider = GithubOAuthProvider(db)
+
+        # authenticate user via github
         user = await provider.authenticate(code)
+
+        # mark user verified
+        user.is_verified = True
+        await db.commit()
+
+        # create jwt token
         jwt_token = create_user_token(user.username, user.id, timedelta(minutes=15))
+
         log_info(request, f"GitHub OAuth login success: {user.email}")
-        return RedirectResponse(url=f"{config.FRONTEND_URL}/auth/github/callback?token={jwt_token}")
+
+        return RedirectResponse(
+            url=f"{config.FRONTEND_URL}/auth/github/callback?token={jwt_token}"
+        )
+
+    except Exception as e:
+        log_exception(request, f"GitHub OAuth callback failed: {str(e)}")
+        raise
+
     finally:
         end_span(request)

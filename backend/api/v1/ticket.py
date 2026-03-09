@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException,Form, File, UploadFile,Request
+
+from fastapi import APIRouter, Depends, HTTPException,Form, File, UploadFile , BackgroundTasks,Request
+
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from notifications.dispatcher import emit_event
@@ -42,7 +44,8 @@ async def list_of_tickets(request:Request,db: AsyncSession = Depends(get_async_s
 
 @ticket_router.post("/")
 async def create_ticket(
-    request:Request,
+    request: Request,
+    background_tasks: BackgroundTasks,
     authuser: Annotated[dict, Depends(get_current_user)],
     db: AsyncSession = Depends(get_async_session),
 
@@ -54,6 +57,8 @@ async def create_ticket(
     new_span(request, "create_ticket_route")
     try:
         uploaded_urls = []
+
+        # upload files to cloudinary
         if files:
             new_span(request, "upload_ticket_files")
             for file in files:
@@ -63,8 +68,8 @@ async def create_ticket(
                     resource_type="auto"
                 )
                 uploaded_urls.append(upload["secure_url"])
-            log_info(request, f"{len(uploaded_urls)} files uploaded")
 
+            log_info(request, f"{len(uploaded_urls)} files uploaded")
             end_span(request)
 
         now = datetime.now().replace(microsecond=0)
@@ -83,25 +88,15 @@ async def create_ticket(
         )
 
         db.add(ticket)
+
+        # commit ticket
         new_span(request, "db_commit_ticket")
         try:
             await db.commit()
             await db.refresh(ticket)
-            log_info(request, f"Ticket created successfully id={ticket.id}")
-           
-            new_span(request, "emit_ticket_created_event")
 
-            await emit_event(
-            event_name="TICKET_CREATED",
-            strategy="DIRECT",
-            payload={
-                "user_id": authuser["id"],
-                "message": f"Your ticket regarding '{subject}' has been created."
-            }
-        )
-            end_span(request)
-            return ticket
-            
+            log_info(request, f"Ticket created successfully id={ticket.id}")
+
         except Exception as exc:
             await db.rollback()
             log_exception(request, f"Ticket creation failed: {str(exc)}")
@@ -109,13 +104,29 @@ async def create_ticket(
         finally:
             end_span(request)
 
+        # emit event in background
+        new_span(request, "emit_ticket_created_event")
+        try:
+            background_tasks.add_task(
+                emit_event,
+                event_name="TICKET_CREATED",
+                strategy="DIRECT",
+                payload={
+                    "user_id": authuser["id"],
+                    "message": f"Your ticket regarding '{subject}' has been created."
+                }
+            )
+        finally:
+            end_span(request)
+
+        return ticket
+
     except Exception as exc:
         log_exception(request, f"Create ticket route failed: {str(exc)}")
         raise
 
     finally:
         end_span(request)
-
 
 
 @ticket_router.get('/{ticket_id}')

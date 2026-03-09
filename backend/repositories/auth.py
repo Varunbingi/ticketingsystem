@@ -26,6 +26,9 @@ async def authenticate_user(
     if not password_hash.verify(password, user.password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, 
                             detail="Incorrect password")
+    if not user.is_verified:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, 
+                            detail="pls verify your email before logging in")
     return user
 
 def create_user_token(
