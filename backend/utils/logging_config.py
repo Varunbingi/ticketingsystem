@@ -1,45 +1,62 @@
-import logging.config
+from utils.settings import config
 
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
 
     "formatters": {
-        "standard": {
-            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-        },
-        "simple": {
-            "format": "[%(levelname)s] %(message)s"
-        },
+        "default": {
+            "format": (
+                "%(asctime)s %(levelname)s "
+                "file=%(filename)s line=%(lineno)d "
+                "path=%(path)s method=%(method)s "
+                "user_id=%(user_id)s "
+                "request_id=%(request_id)s trace_id=%(trace_id)s span_id=%(span_id)s span_name=%(span_name)s "
+                "duration_ms=%(duration_ms)s "
+                "message=%(message)s"
+            )
+        }
+    },
+
+    "filters": {
+        "context": {
+            "()": "logging_system.logging_filter.RequestContextFilter"
+        }
     },
 
     "handlers": {
         "console": {
-            "level": "INFO",
             "class": "logging.StreamHandler",
-            "formatter": "simple",
-            "stream": "ext://sys.stdout",
+            "formatter": "default",
+            "filters": ["context"],
+            "level": "INFO"
         },
         "file": {
+            "class": "logging.FileHandler",
+            "formatter": "default",
+            "filters": ["context"],
             "level": "INFO",
-            "class": "logging.handlers.RotatingFileHandler",
-            "formatter": "standard",
-            "filename": "logs/app.log",
-            "maxBytes": 1024 * 1024 * 5,
-            "backupCount": 5,
+            "filename": "logs/app.log"
         },
+        "betterstack": {
+            "class": "logtail.LogtailHandler",
+            "formatter": "default",
+            "filters": ["context"],
+            "level": "INFO",
+            "source_token": config.BETTERSTACK_SOURCE_TOKEN
+        },
+        "db": {
+            "class": "logging_system.db_log_handler.DBLogHandler",
+            "level": "INFO",
+            "filters": ["context"]
+        }
     },
 
     "loggers": {
-        "": {  # This is the 'root' logger: every logger in the app inherits from this
-            "handlers": ["console", "file"], # Send root logs to both destinations
+        "app": {
+            "handlers": ["console", "file", "betterstack", "db"],
             "level": "INFO",
-            "propagate": True
-        },
-        "uvicorn.access": { # Explicitly configure uvicorn's web server logs
-            "handlers": ["console"],
-            "level": "INFO",
-            "propagate": False,
-        },
+            "propagate": False
+        }
     }
 }
