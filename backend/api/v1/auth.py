@@ -293,6 +293,7 @@ async def current_user_route(
 @auth_router.post("/create")
 async def create_user_route(
     request: Request,
+    background_tasks: BackgroundTasks,
     userrequest: CreateUserRequest,
     db: AsyncSession = Depends(get_async_session)
 ):
@@ -351,6 +352,7 @@ async def create_user_route(
 @auth_router.post("/verify/{user_id}")
 async def verify_user_route(
     request: Request,
+    background_tasks: BackgroundTasks,
     user_id: int,
     db: AsyncSession = Depends(get_async_session)
 ):
@@ -383,7 +385,8 @@ async def verify_user_route(
         # emit welcome event
         new_span(request, "emit_welcome_event")
         try:
-            await emit_event(
+            background_tasks.add_task(
+                emit_event,
                 event_name="WELCOME",
                 strategy="DIRECT",
                 payload={
