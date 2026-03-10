@@ -13,7 +13,6 @@ from notifications.dispatcher import emit_event
 from logging_system.log_helper import new_span, end_span, log_info, log_exception,log_warning
 
 client_router = APIRouter(prefix="/clients", tags=["clients"])
-background_tasks = BackgroundTasks()
 @client_router.get("/")
 async def get_all_clients(request:Request,db: AsyncSession = Depends(get_async_session)):
     new_span(request, "get_all_clients_route")

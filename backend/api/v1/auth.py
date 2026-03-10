@@ -24,7 +24,6 @@ from logging_system.log_helper import new_span, end_span, log_info, log_warning,
 
 
 password_hash = PasswordHash.recommended()
-background_tasks = BackgroundTasks()
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
