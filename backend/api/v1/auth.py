@@ -24,7 +24,6 @@ from notifications.dispatcher import emit_event
 
 
 password_hash = PasswordHash.recommended()
-background_tasks = BackgroundTasks()
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -220,7 +219,7 @@ async def current_user(
 
 
 @auth_router.post('/create')
-async def create_user(userrequest: CreateUserRequest, 
+async def create_user(userrequest: CreateUserRequest, background_tasks : BackgroundTasks,
                       db: AsyncSession = Depends(get_async_session)):
     create_user_model = User(
         username =  userrequest.username,
@@ -244,6 +243,7 @@ async def create_user(userrequest: CreateUserRequest,
     await db.refresh(create_user_model)
     verification_link = f"http://localhost:8000/auth/verify/{create_user_model.id}"
     email = EmailChannel()
+
     background_tasks.add_task(
         email.send,
         user_id=create_user_model.id,
@@ -253,7 +253,7 @@ async def create_user(userrequest: CreateUserRequest,
     return create_user_model
 
 @auth_router.post("/verify/{user_id}")
-async def verify_user(user_id: int, db: AsyncSession = Depends(get_async_session)):
+async def verify_user(user_id: int, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_async_session)):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     

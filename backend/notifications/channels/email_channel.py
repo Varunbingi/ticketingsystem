@@ -8,7 +8,6 @@ from sqlalchemy import select
 
 class EmailChannel(BaseChannel):
     async def send(self, user_id: int, message: str, title: str = "Notification"):
-        print
         template_map = {
             "WELCOME": "user_registration.html",
             "TICKET_CREATED": "ticket_confirmation.html",
@@ -29,9 +28,12 @@ class EmailChannel(BaseChannel):
                 }
                 if title == "VERIFICATION":
                     email_context["verification_link"] = message
-                await send_email(
+                try:
+                    await send_email(
                     subject=title,
                     recipient_email=[user.email],
                     template_name=target_template,
                     context=email_context
                 )
+                except Exception as e:
+                    print(f"Error sending email to {user.email}: {str(e)}")

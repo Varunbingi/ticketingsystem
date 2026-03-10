@@ -10,7 +10,6 @@ from repositories.auth import get_current_user
 from notifications.dispatcher import emit_event
 
 client_router = APIRouter(prefix="/clients", tags=["clients"])
-background_tasks = BackgroundTasks()
 @client_router.get("/")
 async def get_all_clients(db: AsyncSession = Depends(get_async_session)):
     results = await db.execute(select(Client).order_by(desc(Client.id)))
@@ -30,7 +29,7 @@ async def get_client(id: int, db: AsyncSession = Depends(get_async_session)):
         return []
     
 @client_router.post("/")
-async def add_client(client: ClientModel, authuser: Annotated[dict, Depends(get_current_user)], db: AsyncSession = Depends(get_async_session)):
+async def add_client(client: ClientModel,background_tasks: BackgroundTasks, authuser: Annotated[dict, Depends(get_current_user)], db: AsyncSession = Depends(get_async_session)):
     data = client.model_dump()
     now = datetime.now().replace(microsecond=0)
     data["created_at"] = data.get("created_at") or now
@@ -45,10 +44,10 @@ async def add_client(client: ClientModel, authuser: Annotated[dict, Depends(get_
         await db.refresh(dataobj)
         background_tasks.add_task(
             emit_event,
-            event_name="WELCOME", # Or "CLIENT_REGISTERED"
+            event_name="WELCOME", 
             strategy="DIRECT",
             payload={
-                "user_id": authuser["id"], # Or the client's internal user ID if mapped
+                "user_id": authuser["id"], 
                 "message": f"Client '{dataobj.name}' has been successfully registered."
         }
         )
