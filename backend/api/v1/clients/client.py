@@ -58,6 +58,7 @@ async def get_client(request: Request, id: int, db: AsyncSession = Depends(get_a
 @client_router.post("/")
 async def add_client(
     request: Request,
+    background_tasks: BackgroundTasks,
     client: ClientModel,
     authuser: Annotated[dict, Depends(get_current_user)],
     db: AsyncSession = Depends(get_async_session)
@@ -85,7 +86,8 @@ async def add_client(
             await db.commit()
             await db.refresh(dataobj)
 
-            await emit_event(
+            background_tasks.add_task(
+                emit_event,
                 event_name="WELCOME",
                 strategy="DIRECT",
                 payload={
