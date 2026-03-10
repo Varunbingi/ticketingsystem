@@ -40,8 +40,9 @@ auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 class BaseOAuthProvider(ABC):
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession,request: Request):
         self.db = db
+        self.request= request
 
     @abstractmethod
     async def get_access_token(self, code: str) -> str:
@@ -56,43 +57,43 @@ class BaseOAuthProvider(ABC):
         pass
 
     async def authenticate(self, code: str) -> User:
-        new_span("oauth_authenticate")
+        new_span(self.request,"oauth_authenticate")
         try:
-            new_span("fetch_access_token")
+            new_span(self.request,"fetch_access_token")
             access_token = await self.get_access_token(code)
-            end_span()
+            end_span(self.request)
 
             if not access_token:
-                log_warning(None, "Failed to fetch access token")
+                log_warning(self.request, "Failed to fetch access token")
                 raise HTTPException(status_code=400, detail="Failed to fetch access token")
 
-            new_span("fetch_user_info")
+            new_span(self.request,"fetch_user_info")
             user_info = await self.get_user_info(access_token)
-            end_span()
+            end_span(self.request)
 
             if not user_info:
-                log_warning(None, "Failed to fetch user info")
+                log_warning(self.request, "Failed to fetch user info")
                 raise HTTPException(status_code=400, detail="Failed to fetch user info")
             
-            new_span("get_or_create_user")
+            new_span(self.request,"get_or_create_user")
             user = await self.get_or_create_user(user_info)
-            end_span()
+            end_span(self.request)
 
-            log_info(None, f"OAuth authentication succeeded for {user.email}")
+            log_info(self.request, f"OAuth authentication succeeded for {user.email}")
             return user
         
         except Exception as e:
-            log_exception(None, f"Error in OAuth authentication: {str(e)}")
+            log_exception(self.request, f"Error in OAuth authentication: {str(e)}")
             raise
         finally:
-            end_span()
+            end_span(self.request)
 
 # GOOGLE PROVIDER
 
 class GoogleOAuthProvider(BaseOAuthProvider):
 
     async def get_access_token(self, code: str) -> str:
-        new_span("google_get_access_token")
+        new_span(self.request,"google_get_access_token")
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
@@ -106,32 +107,32 @@ class GoogleOAuthProvider(BaseOAuthProvider):
                     },
                 )
                 token = response.json().get("access_token")
-                log_info(None, "Google access token fetched")
+                log_info(self.request, "Google access token fetched")
                 return token
         except Exception as e:
-            log_exception(None, f"Google get_access_token failed: {str(e)}")
+            log_exception(self.request, f"Google get_access_token failed: {str(e)}")
             raise
         finally:
-            end_span()
+            end_span(self.request)
 
     async def get_user_info(self, access_token: str) -> dict:
-        new_span("google_get_user_info")
+        new_span(self.request,"google_get_user_info")
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
                     GOOGLE_USERINFO_URL,
                     headers={"Authorization": f"Bearer {access_token}"}
                 )
-                log_info(None, "Google user info fetched")
+                log_info(self.request, "Google user info fetched")
                 return response.json()
         except Exception as e:
-            log_exception(None, f"Google get_user_info failed: {str(e)}")
+            log_exception(self.request, f"Google get_user_info failed: {str(e)}")
             raise
         finally:
-            end_span()
+            end_span(self.request)
 
     async def get_or_create_user(self, user_info: dict) -> User:
-        new_span("google_get_or_create_user")
+        new_span(self.request,"google_get_or_create_user")
         try:
             email = user_info.get("email")
 
@@ -165,23 +166,23 @@ class GoogleOAuthProvider(BaseOAuthProvider):
                 await self.db.commit()
                 await self.db.refresh(user)
 
-                log_info(None, f"Google user created: {email}")
+                log_info(self.request, f"Google user created: {email}")
             else:
-                log_info(None, f"Google user exists: {email}")
+                log_info(self.request, f"Google user exists: {email}")
 
             return user
 
         except Exception as e:
-            log_exception(None, f"Google get_or_create_user failed: {str(e)}")
+            log_exception(self.request, f"Google get_or_create_user failed: {str(e)}")
             raise
         finally:
-            end_span()
+            end_span(self.request)
 # GITHUB PROVIDER
 
 class GithubOAuthProvider(BaseOAuthProvider):
 
     async def get_access_token(self, code: str) -> str:
-        new_span("github_get_access_token")
+        new_span(self.request,"github_get_access_token")
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
@@ -195,16 +196,16 @@ class GithubOAuthProvider(BaseOAuthProvider):
                     },
                 )
                 token = response.json().get("access_token")
-                log_info(None, "GitHub access token fetched")
+                log_info(self.request, "GitHub access token fetched")
                 return token
         except Exception as e:
-            log_exception(None, f"GitHub get_access_token failed: {str(e)}")
+            log_exception(self.request, f"GitHub get_access_token failed: {str(e)}")
             raise
         finally:
-            end_span()
+            end_span(self.request)
 
     async def get_user_info(self, access_token: str) -> dict:
-        new_span("github_get_user_info")
+        new_span(self.request,"github_get_user_info")
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 user_response = await client.get(
@@ -220,16 +221,16 @@ class GithubOAuthProvider(BaseOAuthProvider):
                 emails = email_response.json()
                 primary_email = next((e["email"] for e in emails if e.get("primary")), None)
                 user_info["email"] = primary_email
-                log_info(None, "GitHub user info fetched")
+                log_info(self.request, "GitHub user info fetched")
                 return user_info
         except Exception as e:
-            log_exception(None, f"GitHub get_user_info failed: {str(e)}")
+            log_exception(self.request, f"GitHub get_user_info failed: {str(e)}")
             raise
         finally:
-            end_span()
+            end_span(self.request)
 
     async def get_or_create_user(self, user_info: dict) -> User:
-        new_span("github_get_or_create_user")
+        new_span(self.request,"github_get_or_create_user")
         try:
             email = user_info.get("email")
 
@@ -260,17 +261,17 @@ class GithubOAuthProvider(BaseOAuthProvider):
                 await self.db.commit()
                 await self.db.refresh(user)
 
-                log_info(None, f"GitHub user created: {email}")
+                log_info(self.request, f"GitHub user created: {email}")
             else:
-                log_info(None, f"GitHub user exists: {email}")
+                log_info(self.request, f"GitHub user exists: {email}")
 
             return user
 
         except Exception as e:
-            log_exception(None, f"GitHub get_or_create_user failed: {str(e)}")
+            log_exception(self.request, f"GitHub get_or_create_user failed: {str(e)}")
             raise
         finally:
-            end_span()
+            end_span(self.request)
 # NORMAL AUTH ROUTES
 
 @auth_router.get("/")
@@ -452,7 +453,7 @@ async def google_callback_route(
 ):
     new_span(request, "google_callback_route")
     try:
-        provider = GoogleOAuthProvider(db)
+        provider = GoogleOAuthProvider(db,request)
 
         # authenticate user with google
         user = await provider.authenticate(code)
@@ -496,7 +497,7 @@ async def github_callback_route(
 ):
     new_span(request, "github_callback_route")
     try:
-        provider = GithubOAuthProvider(db)
+        provider = GithubOAuthProvider(db,request)
 
         # authenticate user via github
         user = await provider.authenticate(code)
