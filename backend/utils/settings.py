@@ -27,6 +27,6 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str
     GITHUB_REDIRECT_URI: str
     FRONTEND_URL: str
-
+    BETTERSTACK_SOURCE_TOKEN: str
 config = Settings()
 
