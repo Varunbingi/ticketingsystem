@@ -158,6 +158,7 @@ async def get_ticket(request: Request,ticket_id: int, db: AsyncSession = Depends
 @ticket_router.put("/{ticket_id}")
 async def update_ticket(
     request:Request,
+    background_tasks: BackgroundTasks,
     ticket_id: int,
     authuser: Annotated[dict, Depends(get_current_user)],
     db: AsyncSession = Depends(get_async_session),
@@ -220,7 +221,8 @@ async def update_ticket(
             # Emit notification event
             new_span(request, "emit_ticket_updated_event")
 
-            await emit_event(
+            background_tasks.add_task(
+                emit_event,
                 event_name="TICKET_UPDATED",
                 strategy="DIRECT",
                 payload={
