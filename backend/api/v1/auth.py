@@ -428,12 +428,17 @@ async def login_for_accesstoken_route(request:Request,
     finally:
         end_span(request)
 
+#i18n  test route
+@auth_router.get("/test-i18n")
+async def test_i18n(request: Request):
+    _ = request.state.translate
+    return {"message": _("Login successful")}
 
 # GOOGLE ROUTES
 
 @auth_router.get("/google/login")
 async def google_login_route():
-    return (
+    google_url = (
         f"{GOOGLE_AUTH_URL}"
         f"?response_type=code"
         f"&client_id={config.GOOGLE_CLIENT_ID}"
@@ -443,7 +448,7 @@ async def google_login_route():
         f"&prompt=select_account"
     )
 
-
+    return RedirectResponse(url=google_url)
 
 @auth_router.get("/google/callback")
 async def google_callback_route(
@@ -481,14 +486,15 @@ async def google_callback_route(
 
 @auth_router.get("/github/login")
 async def github_login_route():
-    return (
+    github_url = (
         f"{GITHUB_AUTH_URL}"
         f"?client_id={config.GITHUB_CLIENT_ID}"
         f"&redirect_uri={config.GITHUB_REDIRECT_URI}"
         f"&scope=user:email"
-        f"&prompt=select_account"
     )
-    
+
+    return RedirectResponse(url=github_url)
+
 @auth_router.get("/github/callback")
 async def github_callback_route(
     request: Request,

@@ -10,12 +10,15 @@ import utils.cloudinary_config
 import uuid 
 from logging_system.log_helper import log_info,log_error,log_warning,log_exception,new_span,end_span,extract_user_id
 from http import HTTPStatus
-import jwt # for decoding JWT (if you use it)
+from jose import jwt # for decoding JWT (if you use it)
+from i18n.language_middleware import LanguageMiddleware
 
 logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(LanguageMiddleware)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):

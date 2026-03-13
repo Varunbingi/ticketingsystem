@@ -29,27 +29,17 @@ export const login = createAsyncThunk("auth/login",
 );
 
 export const oauthgoogle = createAsyncThunk("auth/oauthgoogle",
-  async (_, { rejectWithValue }) => {
-    try {
-      const res = await axiosInstance.get("/auth/google/login");
-      return res.data; 
-    } catch (error) {
-      return rejectWithValue(error.response?.data || "Server error");
-    }
+  async () => {
+    return `${import.meta.env.VITE_REACT_APP_BACKEND_BASEURL}/auth/google/login`;
   }
 );
+
 
 export const oauthgithub = createAsyncThunk("auth/oauthgithub",
-  async (_, { rejectWithValue }) => {
-    try {
-      const res = await axiosInstance.get("/auth/github/login");
-      return res.data; 
-    } catch (error) {
-      return rejectWithValue(error.response?.data || "Server error");
-    }
+  async () => {
+    return `${import.meta.env.VITE_REACT_APP_BACKEND_BASEURL}/auth/github/login`;
   }
 );
-
 
 export const handleOAuthCallback = createAsyncThunk("auth/oauthCallback",
   async ({ provider, code }, { rejectWithValue }) => {
